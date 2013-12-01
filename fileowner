@@ -1,0 +1,178 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+import java.net.*;
+import java.io.*;
+import java.nio.*;
+import java.nio.channels.*;
+import java.util.*;
+
+/**
+ *
+ * @author seria
+ */
+public class FileOwner {
+    public static void main(String[] args)throws Exception  {
+        // TODO code application logic here
+        if (args.length != 2){
+            System.out.println("Please follow the format: \r\nPortNumber FileName");
+        }else{
+       String chunkpath = "chunks/";
+       String filepath = "";
+       int size = 100;
+       int numpeer = 5;
+       int sPort = Integer.parseInt(args[0]);
+       String filename = (String)args[1];
+       int totnum = split(filename, size, chunkpath, filepath);
+       int last = 0;
+       int numfile = 0;
+       if(totnum % numpeer == 0){
+           numfile = totnum/numpeer;
+           last = numfile;
+       }else{
+           numfile = totnum/numpeer + 1;
+           last = totnum - numfile * (numpeer - 1);
+       }
+       
+       System.out.println(numfile);
+       System.out.println(last);
+       
+       System.out.println("The server is running."); 
+        	ServerSocket listener = new ServerSocket(sPort);
+		int clientNum = 1;
+        	try {
+            		while(clientNum <= numpeer) {
+                                if (clientNum != numpeer){
+                                    new Handler(listener.accept(),clientNum, filename, numfile, numfile, size, totnum, chunkpath).start();
+                                }else{
+                                    new Handler(listener.accept(),clientNum, filename, last, numfile, size, totnum, chunkpath).start();
+                                }
+				System.out.println("Client "  + clientNum + " is connected!");
+				clientNum++;
+            		}
+        	} finally {
+            		listener.close();
+        	} 
+       
+        }
+    }
+        
+    
+    
+    private static class Handler extends Thread {
+        	
+		private Socket connection;
+        	private FileInputStream in;	//stream read from the socket
+        	private OutputStream out;    //stream write to the socket
+                private DataOutputStream dos;
+                private BufferedOutputStream bos;
+		private int no;		//The index number of the client
+                private int numfile;
+                private int buffersize;
+                private String filename;
+                private int totnum;
+                private int length;
+                private String chunkpath;
+                int i;
+                
+        	public Handler(Socket connection, int no, String filename, int numfile, int length, int size, int totnum, String chunkpath) {
+            		this.connection = connection;
+                        this.filename = filename;
+	    		this.no = no;
+                        this.numfile = numfile;
+                        this.length = length;
+                        this.buffersize = size;
+                        this.totnum = totnum;
+                        this.chunkpath = chunkpath;
+        	}
+
+                @Override
+                public void run() {
+                    sendfile();
+                }
+
+                private void sendfile(){
+                    try{
+                        out = connection.getOutputStream();
+                        dos = new DataOutputStream(out);
+                        bos = new BufferedOutputStream(dos);
+                        dos.writeUTF(filename);
+                        dos.writeInt(no);
+                        dos.writeInt(numfile);
+                        dos.writeInt(length);
+                        dos.writeInt(buffersize);
+                        dos.writeInt(totnum);
+			System.out.println(filename);
+                        System.out.println(no);
+                        System.out.println(numfile);
+                        System.out.println(buffersize);
+                        System.out.println(totnum);
+                        dos.flush();
+                        byte[] bufferbyte = new byte[buffersize*1024];
+                        int filelength = 0;
+                        for (i = 1; i<= numfile; i++ ){
+                            System.out.println("sending chunk"+((no-1)*length+i)+" to peer"+no);
+                            File file = new File(chunkpath+filename + "." + ((no-1)*length+i));
+                            in = new FileInputStream(file);
+                            filelength = in.read(bufferbyte, 0, in.available());
+                            dos.writeInt(filelength);
+                            dos.write(bufferbyte, 0, buffersize*1024); ///somethings wrong here  ----fixed
+                            dos.flush();
+                            in.close();
+                        }
+                        System.out.println("Disconnect with Client " + no);
+                        
+		}
+		catch(IOException ioException){
+			System.out.println("Disconnect with Client " + no);
+		}
+		finally{//Close connections
+			try{
+				//in.close();
+				dos.close();
+				connection.close();
+			}
+			catch(IOException ioException){
+				System.out.println("Disconnect with Client " + no);
+			}
+		}
+            }
+    }
+    
+    private static int split(String filename, int fsize, String chunkpath, String filepath){  //need first create a folder called chunks
+        File infile = new File(filepath + filename);
+        int size = fsize;
+        int count = 0;
+        byte[] tempbytes = new byte[size*1024];
+        File outfile;
+        FileOutputStream fos = null;
+        FileInputStream fis = null; 
+   
+        try {
+            fis = new FileInputStream(infile);
+            int byteread;
+            System.out.println(fis.available());
+            while ((byteread = fis.read(tempbytes)) != -1 ){
+                count ++;
+                outfile = new File(chunkpath+filename+"."+count);
+                fos = new FileOutputStream(outfile);
+                fos.write(tempbytes, 0, byteread);
+            }
+            fos.flush();
+        } catch (IOException e){
+            e.printStackTrace(); 
+        }finally{
+                try{
+                    if(fis != null){
+                        fis.close();
+                    }
+                    fos.close();
+                } catch (IOException ex){
+                    ex.printStackTrace();
+                }
+        }
+        return count;
+    }
+}
